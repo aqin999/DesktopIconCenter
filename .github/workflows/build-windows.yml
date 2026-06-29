@@ -22,14 +22,36 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build DesktopIconCenter
+      - name: Show build environment
         shell: pwsh
         run: |
+          msbuild -version
+          Get-ChildItem -LiteralPath . -Force
+
+      - name: Build DesktopIconCenter
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
           msbuild .\DesktopIconCenter.sln `
             /m `
             /p:Configuration=Release `
             /p:Platform=x64 `
-            /p:RestorePackages=false
+            /p:RestorePackages=false `
+            /v:minimal `
+            /fl `
+            /flp:logfile=msbuild.log`;verbosity=diagnostic `
+            /bl:msbuild.binlog
+
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            Write-Host "MSBuild failed with exit code $exitCode"
+            if (Test-Path -LiteralPath "msbuild.log") {
+              Write-Host "===== Last 200 lines of msbuild.log ====="
+              Get-Content -LiteralPath "msbuild.log" -Tail 200
+            }
+            exit $exitCode
+          }
 
       - name: Collect package files
         shell: pwsh
@@ -51,6 +73,16 @@ jobs:
             bin/x64/Release/DesktopIconCenter.exe
             DesktopIconCenter-windows-x64.zip
           if-no-files-found: error
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesktopIconCenter-build-logs
+          path: |
+            msbuild.log
+            msbuild.binlog
+          if-no-files-found: ignore
 
       - name: Create GitHub Release for version tags
         if: startsWith(github.ref, 'refs/tags/v')
