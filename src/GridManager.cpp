@@ -68,8 +68,8 @@ POINT GridManager::FindNearestFreePosition(
         }
         else
         {
-            baseX = std::min(baseX, icon.position.x);
-            baseY = std::min(baseY, icon.position.y);
+            baseX = std::min<LONG>(static_cast<LONG>(baseX), icon.position.x);
+            baseY = std::min<LONG>(static_cast<LONG>(baseY), icon.position.y);
         }
     }
 
