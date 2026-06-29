@@ -101,7 +101,8 @@ void TrayIcon::ShowMenu(POINT screenPoint) const
     AppendMenuW(menu, MF_STRING, ID_TRAY_RELOAD_CONFIG, L"重新加载配置");
     AppendMenuW(menu, MF_STRING, ID_TRAY_OPEN_LOGS, L"查看日志");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, ID_TRAY_EXIT, L"退出");
+    AppendMenuW(menu, MF_STRING, ID_TRAY_EXIT, L"退出 DesktopIconCenter");
+    SetMenuDefaultItem(menu, ID_TRAY_EXIT, FALSE);
 
     SetForegroundWindow(data_.hWnd);
     TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, screenPoint.x, screenPoint.y, 0, data_.hWnd, nullptr);

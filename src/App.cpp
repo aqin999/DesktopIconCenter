@@ -174,7 +174,8 @@ LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
 
     if (message == TrayIcon::MessageId)
     {
-        if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU)
+        const UINT trayEvent = LOWORD(lParam);
+        if (trayEvent == WM_RBUTTONUP || trayEvent == WM_CONTEXTMENU || trayEvent == NIN_KEYSELECT)
         {
             POINT point {};
             GetCursorPos(&point);
@@ -182,7 +183,7 @@ LRESULT App::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
             return 0;
         }
 
-        if (lParam == WM_LBUTTONDBLCLK)
+        if (trayEvent == WM_LBUTTONDBLCLK)
         {
             OpenConfigFile();
             return 0;
