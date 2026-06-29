@@ -1,6 +1,7 @@
 #include "App.h"
 
 #include "resource.h"
+#include "Version.h"
 
 #include <CommCtrl.h>
 #include <ShlObj.h>
@@ -631,7 +632,7 @@ void App::ShowSettingsDialog()
     HWND dialog = CreateWindowExW(
         WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         SettingsWindowClassName(),
-        L"DesktopIconCenter 设置",
+            L"DesktopIconCenter v" DESKTOP_ICON_CENTER_VERSION L" 设置",
         WS_CAPTION | WS_SYSMENU | WS_POPUP,
         x,
         y,

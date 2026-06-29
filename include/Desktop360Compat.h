@@ -30,6 +30,7 @@ private:
     HWND Find360DesktopWindow() const;
     std::filesystem::path FindDtfDataFile() const;
     bool LoadDesktopData(const std::filesystem::path& dataFile, DtfDesktop& desktop) const;
+    bool UpdateDesktopDataOrder(const std::filesystem::path& dataFile, const std::filesystem::path& filePath, int order) const;
     bool SendDragMessages(HWND hwnd, POINT source, POINT destination) const;
 
     static POINT OrderToPoint(int order, int rows, RECT workArea);

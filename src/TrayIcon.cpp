@@ -1,6 +1,7 @@
 #include "TrayIcon.h"
 
 #include "resource.h"
+#include "Version.h"
 
 #include <iterator>
 #include <strsafe.h>
@@ -83,7 +84,7 @@ void TrayIcon::ShowMenu(POINT screenPoint) const
         return;
     }
 
-    AppendMenuW(menu, MF_STRING | MF_DISABLED, 0, L"DesktopIconCenter");
+    AppendMenuW(menu, MF_STRING | MF_DISABLED, 0, L"DesktopIconCenter v" DESKTOP_ICON_CENTER_VERSION);
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
 
     if (paused_)
@@ -113,6 +114,8 @@ void TrayIcon::ShowMenu(POINT screenPoint) const
 
 void TrayIcon::UpdateTip()
 {
-    const wchar_t* tip = paused_ ? L"DesktopIconCenter - 已暂停" : L"DesktopIconCenter - 正在监听桌面";
-    StringCchCopyW(data_.szTip, std::size(data_.szTip), tip);
+    const wchar_t* state = paused_ ? L"已暂停" : L"正在监听桌面";
+    std::wstring tip = L"DesktopIconCenter v" DESKTOP_ICON_CENTER_VERSION L" - ";
+    tip += state;
+    StringCchCopyW(data_.szTip, std::size(data_.szTip), tip.c_str());
 }

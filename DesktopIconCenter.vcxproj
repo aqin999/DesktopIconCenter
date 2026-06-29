@@ -98,6 +98,7 @@
     <ClInclude Include="include\IconManager.h" />
     <ClInclude Include="include\GridManager.h" />
     <ClInclude Include="include\TrayIcon.h" />
+    <ClInclude Include="include\Version.h" />
     <ClInclude Include="include\Logger.h" />
     <ClInclude Include="resource\resource.h" />
   </ItemGroup>

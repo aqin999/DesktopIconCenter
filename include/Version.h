@@ -1,0 +1,4 @@
+#pragma once
+
+#define DESKTOP_ICON_CENTER_VERSION L"1.0.2"
+#define DESKTOP_ICON_CENTER_VERSION_TEXT "1.0.2"

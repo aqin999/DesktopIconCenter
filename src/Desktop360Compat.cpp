@@ -66,6 +66,15 @@ uint32_t ReadUInt32Le(const std::vector<unsigned char>& data, size_t offset)
         (static_cast<uint32_t>(data[offset + 3]) << 24);
 }
 
+void WriteInt32Le(std::vector<unsigned char>& data, size_t offset, int value)
+{
+    const auto raw = static_cast<uint32_t>(value);
+    data[offset] = static_cast<unsigned char>(raw & 0xff);
+    data[offset + 1] = static_cast<unsigned char>((raw >> 8) & 0xff);
+    data[offset + 2] = static_cast<unsigned char>((raw >> 16) & 0xff);
+    data[offset + 3] = static_cast<unsigned char>((raw >> 24) & 0xff);
+}
+
 bool ParseStruct(const std::vector<unsigned char>& data, size_t offset, size_t end, ParsedStruct& parsed)
 {
     if (offset + 5 > end || data[offset] != 'S')
@@ -151,6 +160,24 @@ std::optional<int> IntAt(const ParsedStruct& parsed, size_t index)
         ++current;
     }
     return std::nullopt;
+}
+
+const ParsedValue* IntValueAt(const ParsedStruct& parsed, size_t index)
+{
+    size_t current = 0;
+    for (const auto& value : parsed.scalarValues)
+    {
+        if (value.type != L'd')
+        {
+            continue;
+        }
+        if (current == index)
+        {
+            return &value;
+        }
+        ++current;
+    }
+    return nullptr;
 }
 
 std::optional<std::wstring> StringAt(const ParsedStruct& parsed, size_t index)
@@ -317,6 +344,21 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
         return result;
     }
 
+    if (UpdateDesktopDataOrder(dataFile, filePath, destinationOrder))
+    {
+        std::error_code error;
+        const auto backupFile = dataFile.parent_path() / L"DTFenceData.dtf.bk";
+        if (std::filesystem::exists(backupFile, error))
+        {
+            UpdateDesktopDataOrder(backupFile, filePath, destinationOrder);
+        }
+        logger_.Info(L"已同步 360 桌面助手布局数据: order=" + std::to_wstring(destinationOrder));
+    }
+    else
+    {
+        logger_.Warn(L"360 桌面助手布局数据同步失败: " + filePath.filename().wstring());
+    }
+
     result.success = true;
     result.message = L"360 桌面助手兼容移动: " + filePath.filename().wstring() + L" -> (" +
         std::to_wstring(destination.x) + L", " + std::to_wstring(destination.y) + L")";
@@ -478,6 +520,78 @@ bool Desktop360Compat::LoadDesktopData(const std::filesystem::path& dataFile, Dt
     return false;
 }
 
+bool Desktop360Compat::UpdateDesktopDataOrder(const std::filesystem::path& dataFile, const std::filesystem::path& filePath, int order) const
+{
+    std::ifstream stream(dataFile, std::ios::binary);
+    if (!stream)
+    {
+        return false;
+    }
+
+    std::vector<unsigned char> data(
+        (std::istreambuf_iterator<char>(stream)),
+        std::istreambuf_iterator<char>());
+    if (data.empty())
+    {
+        return false;
+    }
+
+    bool changed = false;
+    size_t cursor = 0;
+    while (cursor + 5 <= data.size())
+    {
+        ParsedStruct group;
+        if (!ParseStruct(data, cursor, data.size(), group))
+        {
+            return false;
+        }
+
+        const size_t payloadLength = ReadUInt32Le(data, cursor + 1);
+        cursor = group.payloadOffset + payloadLength;
+
+        const auto groupId = IntAt(group, 0);
+        if (!groupId.has_value() || *groupId != Desktop360GroupId)
+        {
+            continue;
+        }
+
+        for (const auto& record : group.children)
+        {
+            const auto path = StringAt(record, 0);
+            const ParsedValue* orderValue = IntValueAt(record, 6);
+            if (!path.has_value() || orderValue == nullptr)
+            {
+                continue;
+            }
+
+            if (SamePath(*path, filePath))
+            {
+                WriteInt32Le(data, orderValue->offset + 5, order);
+                changed = true;
+                break;
+            }
+        }
+        break;
+    }
+
+    if (!changed)
+    {
+        return false;
+    }
+
+    std::error_code error;
+    const auto backup = dataFile;
+    std::filesystem::copy_file(backup, backup.wstring() + L".dicbak", std::filesystem::copy_options::overwrite_existing, error);
+
+    std::ofstream output(dataFile, std::ios::binary | std::ios::trunc);
+    if (!output)
+    {
+        return false;
+    }
+    output.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    return output.good();
+}
+
 bool Desktop360Compat::SendDragMessages(HWND hwnd, POINT source, POINT destination) const
 {
     if (hwnd == nullptr || !IsWindow(hwnd))
@@ -494,12 +608,17 @@ bool Desktop360Compat::SendDragMessages(HWND hwnd, POINT source, POINT destinati
         return MAKELPARAM(static_cast<short>(point.x), static_cast<short>(point.y));
     };
 
-    if (!PostMessageW(hwnd, WM_MOUSEMOVE, 0, makePoint(clientSource)))
+    const auto send = [hwnd](UINT message, WPARAM wParam, LPARAM lParam) -> bool {
+        DWORD_PTR result = 0;
+        return SendMessageTimeoutW(hwnd, message, wParam, lParam, SMTO_ABORTIFHUNG | SMTO_BLOCK, 500, &result) != 0;
+    };
+
+    if (!send(WM_MOUSEMOVE, 0, makePoint(clientSource)))
     {
         return false;
     }
     Sleep(20);
-    if (!PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, makePoint(clientSource)))
+    if (!send(WM_LBUTTONDOWN, MK_LBUTTON, makePoint(clientSource)))
     {
         return false;
     }
@@ -512,16 +631,16 @@ bool Desktop360Compat::SendDragMessages(HWND hwnd, POINT source, POINT destinati
             clientSource.x + ((clientDestination.x - clientSource.x) * step) / steps,
             clientSource.y + ((clientDestination.y - clientSource.y) * step) / steps
         };
-        PostMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, makePoint(current));
+        send(WM_MOUSEMOVE, MK_LBUTTON, makePoint(current));
         Sleep(12);
     }
 
     Sleep(40);
-    if (!PostMessageW(hwnd, WM_LBUTTONUP, 0, makePoint(clientDestination)))
+    if (!send(WM_LBUTTONUP, 0, makePoint(clientDestination)))
     {
         return false;
     }
-    PostMessageW(hwnd, WM_MOUSEMOVE, 0, makePoint(clientDestination));
+    send(WM_MOUSEMOVE, 0, makePoint(clientDestination));
     return true;
 }
 

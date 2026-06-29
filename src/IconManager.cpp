@@ -146,6 +146,33 @@ MoveResult IconManager::MoveNewIconToCenter(const std::filesystem::path& filePat
         hr = folderView->SelectAndPositionItems(1, &targetPidl, &mutableDestination, SVSI_POSITIONITEM);
         if (SUCCEEDED(hr))
         {
+            if (listView.IsValid())
+            {
+                int moveIndex = listIndex;
+                if (moveIndex < 0)
+                {
+                    moveIndex = listView.FindItemByName(filePath.stem().wstring());
+                }
+                if (moveIndex < 0 && *targetIndex < static_cast<size_t>(listView.GetItemCount()))
+                {
+                    moveIndex = static_cast<int>(*targetIndex);
+                }
+
+                if (moveIndex >= 0)
+                {
+                    if (listView.SetItemPosition(moveIndex, destination))
+                    {
+                        logger_.Info(L"LVM_SETITEMPOSITION 兜底移动索引 " + std::to_wstring(moveIndex) + L" -> (" +
+                            std::to_wstring(destination.x) + L", " + std::to_wstring(destination.y) + L")");
+                    }
+                    RedrawWindow(listView.Hwnd(), nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+                }
+                else
+                {
+                    logger_.Warn(L"LVM_SETITEMPOSITION 兜底未找到 ListView 索引: " + filePath.filename().wstring());
+                }
+            }
+
             Desktop360Compat desktop360Compat(logger_);
             const Desktop360MoveResult desktop360Result = desktop360Compat.TryMoveIconToCenter(filePath, config);
             if (desktop360Result.attempted && !desktop360Result.success)
