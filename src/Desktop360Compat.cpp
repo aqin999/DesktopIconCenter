@@ -278,8 +278,8 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
         workArea = desktop.workArea;
     }
 
-    const int rows = std::max(1, (workArea.bottom - workArea.top) / CellHeight);
-    const int columns = std::max(1, (workArea.right - workArea.left) / CellWidth);
+    const int rows = std::max<int>(1, static_cast<int>((workArea.bottom - workArea.top) / CellHeight));
+    const int columns = std::max<int>(1, static_cast<int>((workArea.right - workArea.left) / CellWidth));
 
     POINT targetPoint {
         workArea.left + (workArea.right - workArea.left) / 2,
