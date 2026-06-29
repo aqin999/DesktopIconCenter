@@ -53,6 +53,7 @@ private:
     struct PostedDesktopEvent;
 
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK SettingsWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
     bool RegisterHiddenWindowClass();
@@ -64,6 +65,8 @@ private:
     void HandleTrayCommand(UINT commandId);
     void OpenConfigFile();
     void OpenLogsFolder();
+    void ShowSettingsDialog();
+    void ApplyAutoStartSetting(bool enable);
     void ToggleAutoStart();
     void SetPaused(bool paused);
     std::filesystem::path GetDesktopPath() const;

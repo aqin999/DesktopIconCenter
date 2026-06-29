@@ -95,6 +95,7 @@ void TrayIcon::ShowMenu(POINT screenPoint) const
         AppendMenuW(menu, MF_STRING, ID_TRAY_PAUSE, L"暂停监听");
     }
 
+    AppendMenuW(menu, MF_STRING, ID_TRAY_SETTINGS, L"设置...");
     AppendMenuW(menu, MF_STRING | (autoStart_ ? MF_CHECKED : MF_UNCHECKED), ID_TRAY_AUTOSTART, L"开机启动");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, ID_TRAY_OPEN_CONFIG, L"打开配置");

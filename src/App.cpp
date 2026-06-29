@@ -21,6 +21,20 @@ const wchar_t* HiddenWindowClassName()
     return L"DesktopIconCenterHiddenWindow";
 }
 
+const wchar_t* SettingsWindowClassName()
+{
+    return L"DesktopIconCenterSettingsWindow";
+}
+
+constexpr int SettingsAutoStartCheckboxId = 51001;
+
+struct SettingsDialogState
+{
+    App* app = nullptr;
+    HWND checkbox = nullptr;
+    bool done = false;
+};
+
 std::wstring ToLower(std::wstring value)
 {
     std::transform(value.begin(), value.end(), value.begin(), [](wchar_t ch) {
@@ -32,6 +46,11 @@ std::wstring ToLower(std::wstring value)
 bool IsShellExecuteSuccess(HINSTANCE instance)
 {
     return reinterpret_cast<INT_PTR>(instance) > 32;
+}
+
+void SetDefaultGuiFont(HWND hwnd)
+{
+    SendMessageW(hwnd, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
 }
 }
 
@@ -156,6 +175,131 @@ LRESULT CALLBACK App::WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
     if (app != nullptr)
     {
         return app->HandleMessage(hwnd, message, wParam, lParam);
+    }
+
+    return DefWindowProcW(hwnd, message, wParam, lParam);
+}
+
+LRESULT CALLBACK App::SettingsWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    auto* state = reinterpret_cast<SettingsDialogState*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    if (message == WM_NCCREATE)
+    {
+        const auto* createStruct = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        state = static_cast<SettingsDialogState*>(createStruct->lpCreateParams);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+    }
+
+    switch (message)
+    {
+    case WM_CREATE:
+    {
+        if (state == nullptr || state->app == nullptr)
+        {
+            return -1;
+        }
+
+        HWND title = CreateWindowExW(
+            0,
+            L"STATIC",
+            L"启动设置",
+            WS_CHILD | WS_VISIBLE,
+            22,
+            18,
+            360,
+            24,
+            hwnd,
+            nullptr,
+            state->app->instance_,
+            nullptr);
+        SetDefaultGuiFont(title);
+
+        state->checkbox = CreateWindowExW(
+            0,
+            L"BUTTON",
+            L"随 Windows 开机自动启动 DesktopIconCenter",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            22,
+            52,
+            360,
+            28,
+            hwnd,
+            reinterpret_cast<HMENU>(SettingsAutoStartCheckboxId),
+            state->app->instance_,
+            nullptr);
+        SetDefaultGuiFont(state->checkbox);
+        SendMessageW(
+            state->checkbox,
+            BM_SETCHECK,
+            state->app->config_.Data().autoStart ? BST_CHECKED : BST_UNCHECKED,
+            0);
+
+        HWND saveButton = CreateWindowExW(
+            0,
+            L"BUTTON",
+            L"保存",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+            210,
+            104,
+            78,
+            28,
+            hwnd,
+            reinterpret_cast<HMENU>(IDOK),
+            state->app->instance_,
+            nullptr);
+        SetDefaultGuiFont(saveButton);
+
+        HWND cancelButton = CreateWindowExW(
+            0,
+            L"BUTTON",
+            L"取消",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+            300,
+            104,
+            78,
+            28,
+            hwnd,
+            reinterpret_cast<HMENU>(IDCANCEL),
+            state->app->instance_,
+            nullptr);
+        SetDefaultGuiFont(cancelButton);
+
+        return 0;
+    }
+
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK)
+        {
+            if (state != nullptr && state->app != nullptr)
+            {
+                const bool enable = SendDlgItemMessageW(hwnd, SettingsAutoStartCheckboxId, BM_GETCHECK, 0, 0) == BST_CHECKED;
+                state->app->ApplyAutoStartSetting(enable);
+            }
+            DestroyWindow(hwnd);
+            return 0;
+        }
+
+        if (LOWORD(wParam) == IDCANCEL)
+        {
+            DestroyWindow(hwnd);
+            return 0;
+        }
+        break;
+
+    case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
+
+    case WM_DESTROY:
+        if (state != nullptr)
+        {
+            state->done = true;
+        }
+        return 0;
+
+    default:
+        break;
     }
 
     return DefWindowProcW(hwnd, message, wParam, lParam);
@@ -385,6 +529,10 @@ void App::HandleTrayCommand(UINT commandId)
         ToggleAutoStart();
         break;
 
+    case ID_TRAY_SETTINGS:
+        ShowSettingsDialog();
+        break;
+
     case ID_TRAY_OPEN_CONFIG:
         OpenConfigFile();
         break;
@@ -453,6 +601,93 @@ void App::OpenLogsFolder()
     }
 
     ShellExecuteW(window_, L"open", logDirectory.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+void App::ShowSettingsDialog()
+{
+    config_.Reload();
+    trayIcon_.SetAutoStart(config_.Data().autoStart);
+
+    WNDCLASSEXW windowClass {};
+    windowClass.cbSize = sizeof(windowClass);
+    windowClass.lpfnWndProc = App::SettingsWindowProc;
+    windowClass.hInstance = instance_;
+    windowClass.hIcon = LoadIconW(instance_, MAKEINTRESOURCEW(IDI_APP_ICON));
+    windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    windowClass.lpszClassName = SettingsWindowClassName();
+    RegisterClassExW(&windowClass);
+
+    constexpr int width = 420;
+    constexpr int height = 176;
+    RECT workArea {};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
+    const int x = workArea.left + ((workArea.right - workArea.left) - width) / 2;
+    const int y = workArea.top + ((workArea.bottom - workArea.top) - height) / 2;
+
+    SettingsDialogState state;
+    state.app = this;
+
+    HWND dialog = CreateWindowExW(
+        WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+        SettingsWindowClassName(),
+        L"DesktopIconCenter 设置",
+        WS_CAPTION | WS_SYSMENU | WS_POPUP,
+        x,
+        y,
+        width,
+        height,
+        window_,
+        nullptr,
+        instance_,
+        &state);
+
+    if (dialog == nullptr)
+    {
+        logger_.Error(L"创建设置窗口失败");
+        return;
+    }
+
+    if (window_ != nullptr)
+    {
+        EnableWindow(window_, FALSE);
+    }
+
+    ShowWindow(dialog, SW_SHOWNORMAL);
+    UpdateWindow(dialog);
+
+    MSG message {};
+    while (!state.done && GetMessageW(&message, nullptr, 0, 0) > 0)
+    {
+        if (!IsDialogMessageW(dialog, &message))
+        {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+
+    if (window_ != nullptr)
+    {
+        EnableWindow(window_, TRUE);
+        SetForegroundWindow(window_);
+    }
+}
+
+void App::ApplyAutoStartSetting(bool enable)
+{
+    config_.Reload();
+    config_.SetAutoStart(enable);
+
+    if (config_.ApplyAutoStart(enable))
+    {
+        config_.Save();
+        trayIcon_.SetAutoStart(enable);
+        logger_.Info(enable ? L"设置窗口：已启用开机启动" : L"设置窗口：已关闭开机启动");
+        return;
+    }
+
+    logger_.Error(L"设置窗口：修改开机启动失败");
+    MessageBoxW(window_, L"修改开机启动失败，请查看日志。", L"DesktopIconCenter", MB_OK | MB_ICONERROR);
 }
 
 void App::ToggleAutoStart()
