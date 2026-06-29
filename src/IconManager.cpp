@@ -1,5 +1,6 @@
 #include "IconManager.h"
 
+#include "Desktop360Compat.h"
 #include "DesktopListView.h"
 
 #include <Shlwapi.h>
@@ -145,10 +146,24 @@ MoveResult IconManager::MoveNewIconToCenter(const std::filesystem::path& filePat
         hr = folderView->SelectAndPositionItems(1, &targetPidl, &mutableDestination, SVSI_POSITIONITEM);
         if (SUCCEEDED(hr))
         {
+            Desktop360Compat desktop360Compat(logger_);
+            const Desktop360MoveResult desktop360Result = desktop360Compat.TryMoveIconToCenter(filePath, config);
+            if (desktop360Result.attempted && !desktop360Result.success)
+            {
+                result.success = false;
+                result.requestedPoint = destination;
+                result.message = L"Explorer 已移动，但 360 桌面助手兼容移动失败: " + desktop360Result.message;
+                return result;
+            }
+
             result.success = true;
-            result.requestedPoint = destination;
+            result.requestedPoint = desktop360Result.attempted ? desktop360Result.requestedPoint : destination;
             result.message = L"移动成功: " + filePath.filename().wstring() + L" -> (" +
-                std::to_wstring(destination.x) + L", " + std::to_wstring(destination.y) + L")";
+                std::to_wstring(result.requestedPoint.x) + L", " + std::to_wstring(result.requestedPoint.y) + L")";
+            if (desktop360Result.attempted)
+            {
+                result.message += L"; " + desktop360Result.message;
+            }
 
             if (listView.IsValid())
             {

@@ -91,6 +91,7 @@
   <ItemGroup>
     <ClInclude Include="include\App.h" />
     <ClInclude Include="include\Config.h" />
+    <ClInclude Include="include\Desktop360Compat.h" />
     <ClInclude Include="include\DesktopWatcher.h" />
     <ClInclude Include="include\ExplorerDesktop.h" />
     <ClInclude Include="include\DesktopListView.h" />
@@ -104,6 +105,7 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\App.cpp" />
     <ClCompile Include="src\Config.cpp" />
+    <ClCompile Include="src\Desktop360Compat.cpp" />
     <ClCompile Include="src\DesktopWatcher.cpp" />
     <ClCompile Include="src\ExplorerDesktop.cpp" />
     <ClCompile Include="src\DesktopListView.cpp" />

@@ -7,6 +7,7 @@ add_executable(DesktopIconCenter WIN32
     src/App.cpp
     src/Config.cpp
     src/DesktopWatcher.cpp
+    src/Desktop360Compat.cpp
     src/ExplorerDesktop.cpp
     src/DesktopListView.cpp
     src/IconManager.cpp
