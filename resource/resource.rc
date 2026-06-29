@@ -4,8 +4,8 @@
 IDI_APP_ICON ICON "app.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,2,0
- PRODUCTVERSION 1,0,2,0
+ FILEVERSION 1,0,3,0
+ PRODUCTVERSION 1,0,3,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -22,11 +22,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "DesktopIconCenter\0"
             VALUE "FileDescription", "Desktop icon auto center tool\0"
-            VALUE "FileVersion", "1.0.2.0\0"
+            VALUE "FileVersion", "1.0.3.0\0"
             VALUE "InternalName", "DesktopIconCenter\0"
             VALUE "OriginalFilename", "DesktopIconCenter.exe\0"
             VALUE "ProductName", "DesktopIconCenter\0"
-            VALUE "ProductVersion", "1.0.2.0\0"
+            VALUE "ProductVersion", "1.0.3.0\0"
         END
     END
     BLOCK "VarFileInfo"

@@ -1,5 +1,6 @@
 #include "Desktop360Compat.h"
 
+#include <Shellapi.h>
 #include <ShlObj.h>
 
 #include <algorithm>
@@ -226,6 +227,114 @@ bool IsShellExecuteVisible(HWND hwnd)
 
     return (rect.right - rect.left) > 200 && (rect.bottom - rect.top) > 200;
 }
+
+struct Desktop360ProcessInfo
+{
+    DWORD processId = 0;
+    std::filesystem::path executablePath;
+};
+
+bool IsShellExecuteSuccess(HINSTANCE instance)
+{
+    return reinterpret_cast<INT_PTR>(instance) > 32;
+}
+
+std::optional<Desktop360ProcessInfo> QueryProcessInfoFromWindow(HWND hwnd)
+{
+    if (hwnd == nullptr || !IsWindow(hwnd))
+    {
+        return std::nullopt;
+    }
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(hwnd, &processId);
+    if (processId == 0)
+    {
+        return std::nullopt;
+    }
+
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+    if (process == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    std::wstring buffer(32768, L'\0');
+    DWORD size = static_cast<DWORD>(buffer.size());
+    const BOOL ok = QueryFullProcessImageNameW(process, 0, buffer.data(), &size);
+    CloseHandle(process);
+
+    if (!ok || size == 0)
+    {
+        return std::nullopt;
+    }
+
+    buffer.resize(size);
+
+    Desktop360ProcessInfo info;
+    info.processId = processId;
+    info.executablePath = std::filesystem::path(buffer);
+    return info;
+}
+
+bool StopProcessForLayoutReload(const Desktop360ProcessInfo& processInfo, Logger& logger)
+{
+    if (processInfo.processId == 0)
+    {
+        return false;
+    }
+
+    HANDLE process = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, processInfo.processId);
+    if (process == nullptr)
+    {
+        logger.Warn(L"无法打开 360 桌面助手进程用于重载布局: PID=" + std::to_wstring(processInfo.processId));
+        return false;
+    }
+
+    const BOOL terminated = TerminateProcess(process, 0);
+    if (!terminated)
+    {
+        CloseHandle(process);
+        logger.Warn(L"无法停止 360 桌面助手进程用于重载布局: PID=" + std::to_wstring(processInfo.processId));
+        return false;
+    }
+
+    const DWORD waitResult = WaitForSingleObject(process, 5000);
+    CloseHandle(process);
+
+    if (waitResult == WAIT_TIMEOUT)
+    {
+        logger.Warn(L"等待 360 桌面助手退出超时，继续尝试写入布局");
+    }
+
+    return true;
+}
+
+bool StartProcessAfterLayoutReload(const std::filesystem::path& executablePath, Logger& logger)
+{
+    if (executablePath.empty())
+    {
+        return false;
+    }
+
+    const auto directory = executablePath.parent_path().wstring();
+    const auto executable = executablePath.wstring();
+    HINSTANCE instance = ShellExecuteW(
+        nullptr,
+        L"open",
+        executable.c_str(),
+        nullptr,
+        directory.empty() ? nullptr : directory.c_str(),
+        SW_SHOWNORMAL);
+
+    if (!IsShellExecuteSuccess(instance))
+    {
+        logger.Warn(L"重新启动 360 桌面助手失败: " + executablePath.wstring());
+        return false;
+    }
+
+    return true;
+}
 }
 
 struct Desktop360Compat::DtfItem
@@ -327,7 +436,6 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
         return result;
     }
 
-    const POINT source = OrderToPoint(targetItem->order, rows, workArea);
     const POINT destination = OrderToPoint(destinationOrder, rows, workArea);
     result.requestedPoint = destination;
 
@@ -338,14 +446,23 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
         return result;
     }
 
-    if (!SendDragMessages(desktopWindow, source, destination))
+    const auto processInfo = QueryProcessInfoFromWindow(desktopWindow);
+    if (!processInfo.has_value() || processInfo->executablePath.empty())
     {
-        result.message = L"检测到 360 桌面助手，但发送拖拽消息失败";
+        result.message = L"检测到 360 桌面助手，但无法定位其进程路径";
         return result;
     }
 
+    if (!StopProcessForLayoutReload(*processInfo, logger_))
+    {
+        result.message = L"检测到 360 桌面助手，但无法临时重启以加载新布局";
+        return result;
+    }
+
+    bool layoutUpdated = false;
     if (UpdateDesktopDataOrder(dataFile, filePath, destinationOrder))
     {
+        layoutUpdated = true;
         std::error_code error;
         const auto backupFile = dataFile.parent_path() / L"DTFenceData.dtf.bk";
         if (std::filesystem::exists(backupFile, error))
@@ -359,8 +476,38 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
         logger_.Warn(L"360 桌面助手布局数据同步失败: " + filePath.filename().wstring());
     }
 
+    if (!layoutUpdated)
+    {
+        StartProcessAfterLayoutReload(processInfo->executablePath, logger_);
+        result.message = L"检测到 360 桌面助手，但写入 360 布局数据失败";
+        return result;
+    }
+
+    if (!StartProcessAfterLayoutReload(processInfo->executablePath, logger_))
+    {
+        result.message = L"360 布局已写入，但重新启动 360 桌面助手失败";
+        return result;
+    }
+
+    HWND restoredWindow = nullptr;
+    for (int attempt = 0; attempt < 32; ++attempt)
+    {
+        Sleep(250);
+        restoredWindow = Find360DesktopWindow();
+        if (restoredWindow != nullptr)
+        {
+            break;
+        }
+    }
+
+    if (restoredWindow == nullptr)
+    {
+        result.message = L"360 布局已写入，但未确认 360 桌面助手窗口恢复";
+        return result;
+    }
+
     result.success = true;
-    result.message = L"360 桌面助手兼容移动: " + filePath.filename().wstring() + L" -> (" +
+    result.message = L"360 桌面助手已重载布局: " + filePath.filename().wstring() + L" -> (" +
         std::to_wstring(destination.x) + L", " + std::to_wstring(destination.y) + L")";
     logger_.Info(result.message);
     return result;
