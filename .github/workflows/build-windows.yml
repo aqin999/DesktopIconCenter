@@ -1,4 +1,4 @@
-name: Build Windows EXE
+﻿name: Build Windows EXE
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
       - "v*"
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:

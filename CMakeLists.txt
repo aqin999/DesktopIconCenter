@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(DesktopIconCenter VERSION 1.0.3 LANGUAGES CXX RC)
+project(DesktopIconCenter VERSION 1.0.4 LANGUAGES CXX RC)
 
 add_executable(DesktopIconCenter WIN32
     src/main.cpp

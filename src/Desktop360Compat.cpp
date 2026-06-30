@@ -335,6 +335,30 @@ bool StartProcessAfterLayoutReload(const std::filesystem::path& executablePath, 
 
     return true;
 }
+
+void SendMouseInput(DWORD flags, LONG dx = 0, LONG dy = 0)
+{
+    INPUT input {};
+    input.type = INPUT_MOUSE;
+    input.mi.dwFlags = flags;
+    input.mi.dx = dx;
+    input.mi.dy = dy;
+    SendInput(1, &input, sizeof(input));
+}
+
+bool PointIsOn360Desktop(HWND hwnd, POINT point)
+{
+    HWND hit = WindowFromPoint(point);
+    while (hit != nullptr)
+    {
+        if (hit == hwnd)
+        {
+            return true;
+        }
+        hit = GetParent(hit);
+    }
+    return false;
+}
 }
 
 struct Desktop360Compat::DtfItem
@@ -446,6 +470,38 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
         return result;
     }
 
+    const POINT source = OrderToPoint(targetItem->order, rows, workArea);
+    if (SendDragMessages(desktopWindow, source, destination))
+    {
+        DtfDesktop refreshed;
+        for (int attempt = 0; attempt < 12; ++attempt)
+        {
+            Sleep(250);
+            if (!LoadDesktopData(dataFile, refreshed))
+            {
+                continue;
+            }
+
+            for (const auto& item : refreshed.items)
+            {
+                if (SamePath(item.path, filePath) && item.order == destinationOrder)
+                {
+                    result.success = true;
+                    result.message = L"360 桌面助手真实拖拽移动: " + filePath.filename().wstring() + L" -> (" +
+                        std::to_wstring(destination.x) + L", " + std::to_wstring(destination.y) + L")";
+                    logger_.Info(result.message);
+                    return result;
+                }
+            }
+        }
+
+        logger_.Warn(L"360 真实拖拽未确认成功，改用重载布局兜底: " + filePath.filename().wstring());
+    }
+    else
+    {
+        logger_.Warn(L"360 真实拖拽输入失败，改用重载布局兜底: " + filePath.filename().wstring());
+    }
+
     const auto processInfo = QueryProcessInfoFromWindow(desktopWindow);
     if (!processInfo.has_value() || processInfo->executablePath.empty())
     {
@@ -512,6 +568,7 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
     logger_.Info(result.message);
     return result;
 }
+
 
 HWND Desktop360Compat::Find360DesktopWindow() const
 {
@@ -741,53 +798,51 @@ bool Desktop360Compat::UpdateDesktopDataOrder(const std::filesystem::path& dataF
 
 bool Desktop360Compat::SendDragMessages(HWND hwnd, POINT source, POINT destination) const
 {
-    if (hwnd == nullptr || !IsWindow(hwnd))
+    if (hwnd == nullptr || !IsWindow(hwnd) || !IsWindowVisible(hwnd))
     {
         return false;
     }
 
-    POINT clientSource = source;
-    POINT clientDestination = destination;
-    ScreenToClient(hwnd, &clientSource);
-    ScreenToClient(hwnd, &clientDestination);
-
-    const auto makePoint = [](POINT point) -> LPARAM {
-        return MAKELPARAM(static_cast<short>(point.x), static_cast<short>(point.y));
-    };
-
-    const auto send = [hwnd](UINT message, WPARAM wParam, LPARAM lParam) -> bool {
-        DWORD_PTR result = 0;
-        return SendMessageTimeoutW(hwnd, message, wParam, lParam, SMTO_ABORTIFHUNG | SMTO_BLOCK, 500, &result) != 0;
-    };
-
-    if (!send(WM_MOUSEMOVE, 0, makePoint(clientSource)))
+    RECT rect {};
+    if (!GetWindowRect(hwnd, &rect) ||
+        source.x < rect.left || source.x > rect.right ||
+        source.y < rect.top || source.y > rect.bottom ||
+        destination.x < rect.left || destination.x > rect.right ||
+        destination.y < rect.top || destination.y > rect.bottom)
     {
         return false;
     }
-    Sleep(20);
-    if (!send(WM_LBUTTONDOWN, MK_LBUTTON, makePoint(clientSource)))
+
+    if (!PointIsOn360Desktop(hwnd, source) || !PointIsOn360Desktop(hwnd, destination))
     {
         return false;
     }
-    Sleep(40);
 
-    constexpr int steps = 24;
+    POINT originalCursor {};
+    GetCursorPos(&originalCursor);
+
+    SetCursorPos(source.x, source.y);
+    Sleep(180);
+
+    SendMouseInput(MOUSEEVENTF_LEFTDOWN);
+    Sleep(220);
+
+    constexpr int steps = 40;
     for (int step = 1; step <= steps; ++step)
     {
-        POINT current {
-            clientSource.x + ((clientDestination.x - clientSource.x) * step) / steps,
-            clientSource.y + ((clientDestination.y - clientSource.y) * step) / steps
+        const POINT current {
+            source.x + ((destination.x - source.x) * step) / steps,
+            source.y + ((destination.y - source.y) * step) / steps
         };
-        send(WM_MOUSEMOVE, MK_LBUTTON, makePoint(current));
-        Sleep(12);
+        SetCursorPos(current.x, current.y);
+        Sleep(15);
     }
 
-    Sleep(40);
-    if (!send(WM_LBUTTONUP, 0, makePoint(clientDestination)))
-    {
-        return false;
-    }
-    send(WM_MOUSEMOVE, 0, makePoint(clientDestination));
+    Sleep(220);
+    SendMouseInput(MOUSEEVENTF_LEFTUP);
+    Sleep(120);
+    SetCursorPos(originalCursor.x, originalCursor.y);
+
     return true;
 }
 
