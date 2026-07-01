@@ -1,0 +1,11 @@
+.vs/
+build/
+bin/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.user
+*.suo
+*.log
+logs/

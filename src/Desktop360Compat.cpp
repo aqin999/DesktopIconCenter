@@ -346,6 +346,30 @@ void SendMouseInput(DWORD flags, LONG dx = 0, LONG dy = 0)
     SendInput(1, &input, sizeof(input));
 }
 
+LPARAM MakeMouseLParam(POINT point)
+{
+    return MAKELPARAM(static_cast<short>(point.x), static_cast<short>(point.y));
+}
+
+bool ToClientPoint(HWND hwnd, POINT screenPoint, POINT& clientPoint)
+{
+    clientPoint = screenPoint;
+    return ScreenToClient(hwnd, &clientPoint) != FALSE;
+}
+
+bool SendWindowMouseMessage(HWND hwnd, UINT message, WPARAM wParam, POINT clientPoint)
+{
+    DWORD_PTR result = 0;
+    return SendMessageTimeoutW(
+        hwnd,
+        message,
+        wParam,
+        MakeMouseLParam(clientPoint),
+        SMTO_ABORTIFHUNG,
+        1000,
+        &result) != 0;
+}
+
 bool PointIsOn360Desktop(HWND hwnd, POINT point)
 {
     HWND hit = WindowFromPoint(point);
@@ -470,7 +494,51 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
         return result;
     }
 
-    const POINT source = OrderToPoint(targetItem->order, rows, workArea);
+    int currentOrder = targetItem->order;
+    POINT source = OrderToPoint(currentOrder, rows, workArea);
+    if (SendWindowDragMessages(desktopWindow, source, destination))
+    {
+        DtfDesktop refreshed;
+        std::optional<int> observedOrder;
+        for (int attempt = 0; attempt < 12; ++attempt)
+        {
+            Sleep(250);
+            if (!LoadDesktopData(dataFile, refreshed))
+            {
+                continue;
+            }
+
+            for (const auto& item : refreshed.items)
+            {
+                if (!SamePath(item.path, filePath))
+                {
+                    continue;
+                }
+
+                observedOrder = item.order;
+                if (item.order == destinationOrder)
+                {
+                    result.success = true;
+                    result.message = L"360 silent window-message drag: " + filePath.filename().wstring() + L" -> (" +
+                        std::to_wstring(destination.x) + L", " + std::to_wstring(destination.y) + L")";
+                    logger_.Info(result.message);
+                    return result;
+                }
+            }
+        }
+
+        if (observedOrder.has_value() && *observedOrder >= 0)
+        {
+            currentOrder = *observedOrder;
+            source = OrderToPoint(currentOrder, rows, workArea);
+        }
+        logger_.Warn(L"360 silent window-message drag was sent but not confirmed; falling back to real mouse drag: " + filePath.filename().wstring());
+    }
+    else
+    {
+        logger_.Warn(L"360 silent window-message drag failed; falling back to real mouse drag: " + filePath.filename().wstring());
+    }
+
     if (SendDragMessages(desktopWindow, source, destination))
     {
         DtfDesktop refreshed;
@@ -794,6 +862,67 @@ bool Desktop360Compat::UpdateDesktopDataOrder(const std::filesystem::path& dataF
     }
     output.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
     return output.good();
+}
+
+bool Desktop360Compat::SendWindowDragMessages(HWND hwnd, POINT source, POINT destination) const
+{
+    if (hwnd == nullptr || !IsWindow(hwnd) || !IsWindowVisible(hwnd))
+    {
+        return false;
+    }
+
+    RECT rect {};
+    if (!GetWindowRect(hwnd, &rect) ||
+        source.x < rect.left || source.x > rect.right ||
+        source.y < rect.top || source.y > rect.bottom ||
+        destination.x < rect.left || destination.x > rect.right ||
+        destination.y < rect.top || destination.y > rect.bottom)
+    {
+        return false;
+    }
+
+    POINT sourceClient {};
+    POINT destinationClient {};
+    if (!ToClientPoint(hwnd, source, sourceClient) || !ToClientPoint(hwnd, destination, destinationClient))
+    {
+        return false;
+    }
+
+    if (!SendWindowMouseMessage(hwnd, WM_MOUSEMOVE, 0, sourceClient))
+    {
+        return false;
+    }
+    Sleep(150);
+
+    if (!SendWindowMouseMessage(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, sourceClient))
+    {
+        return false;
+    }
+    Sleep(250);
+
+    constexpr int steps = 48;
+    for (int step = 1; step <= steps; ++step)
+    {
+        const POINT current {
+            sourceClient.x + ((destinationClient.x - sourceClient.x) * step) / steps,
+            sourceClient.y + ((destinationClient.y - sourceClient.y) * step) / steps
+        };
+
+        if (!SendWindowMouseMessage(hwnd, WM_MOUSEMOVE, MK_LBUTTON, current))
+        {
+            return false;
+        }
+        Sleep(12);
+    }
+
+    Sleep(150);
+    if (!SendWindowMouseMessage(hwnd, WM_LBUTTONUP, 0, destinationClient))
+    {
+        return false;
+    }
+
+    Sleep(120);
+    return true;
 }
 
 bool Desktop360Compat::SendDragMessages(HWND hwnd, POINT source, POINT destination) const
