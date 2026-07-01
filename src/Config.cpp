@@ -70,6 +70,8 @@ bool Config::Load()
     data_.gridSearchRadius = std::max(1, ReadInt(L"GridSearchRadius", 20));
     data_.ignoreFolders = ReadBool(L"IgnoreFolders", false);
     data_.ignoreShortcut = ReadBool(L"IgnoreShortcut", false);
+    data_.allow360RealMouseDrag = ReadBool(L"Allow360RealMouseDrag", false);
+    data_.allow360Reload = ReadBool(L"Allow360Reload", false);
     return true;
 }
 
@@ -99,7 +101,9 @@ bool Config::Save() const
         WritePrivateProfileStringW(L"General", L"CenterY", std::to_wstring(data_.centerY).c_str(), fileName.c_str()) &&
         WritePrivateProfileStringW(L"General", L"GridSearchRadius", std::to_wstring(data_.gridSearchRadius).c_str(), fileName.c_str()) &&
         WritePrivateProfileStringW(L"General", L"IgnoreFolders", BoolToText(data_.ignoreFolders).c_str(), fileName.c_str()) &&
-        WritePrivateProfileStringW(L"General", L"IgnoreShortcut", BoolToText(data_.ignoreShortcut).c_str(), fileName.c_str());
+        WritePrivateProfileStringW(L"General", L"IgnoreShortcut", BoolToText(data_.ignoreShortcut).c_str(), fileName.c_str()) &&
+        WritePrivateProfileStringW(L"General", L"Allow360RealMouseDrag", BoolToText(data_.allow360RealMouseDrag).c_str(), fileName.c_str()) &&
+        WritePrivateProfileStringW(L"General", L"Allow360Reload", BoolToText(data_.allow360Reload).c_str(), fileName.c_str());
 
     WritePrivateProfileStringW(nullptr, nullptr, nullptr, fileName.c_str());
     return ok;
@@ -233,7 +237,9 @@ void Config::EnsureFileExists() const
              << "CenterY=540\r\n"
              << "GridSearchRadius=20\r\n"
              << "IgnoreFolders=false\r\n"
-             << "IgnoreShortcut=false\r\n";
+             << "IgnoreShortcut=false\r\n"
+             << "Allow360RealMouseDrag=false\r\n"
+             << "Allow360Reload=false\r\n";
     }
     catch (...)
     {

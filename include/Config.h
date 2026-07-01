@@ -16,6 +16,8 @@ struct ConfigData
     int gridSearchRadius = 20;
     bool ignoreFolders = false;
     bool ignoreShortcut = false;
+    bool allow360RealMouseDrag = false;
+    bool allow360Reload = false;
 };
 
 /*

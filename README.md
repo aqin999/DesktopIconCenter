@@ -60,6 +60,8 @@ CenterY=540
 GridSearchRadius=20
 IgnoreFolders=false
 IgnoreShortcut=false
+Allow360RealMouseDrag=false
+Allow360Reload=false
 ```
 
 说明：
@@ -67,6 +69,8 @@ IgnoreShortcut=false
 - `Enable`：是否启用监听。
 - `Delay`：收到桌面新增事件后等待 Explorer 创建图标的毫秒数。
 - `AutoStart`：是否写入当前用户开机启动项。
+- `Allow360RealMouseDrag`：360 桌面助手兼容失败时是否允许占用真实鼠标拖拽，默认 false。
+- `Allow360Reload`：360 桌面助手兼容失败时是否允许重启 360 加载布局，默认 false。
 - `MoveMode`：`Center` 使用主显示器工作区中心；`Custom` / `Fixed` / `Manual` 使用 `CenterX`、`CenterY`。
 - `GridSearchRadius`：从中心向外搜索空网格的最大半径。
 - `IgnoreFolders`：是否忽略文件夹。
@@ -148,6 +152,8 @@ DesktopIconCenter
 
 ## 360 桌面助手兼容说明
 
-从 v1.0.5 开始，检测到 360 桌面助手的 `360DirectUICls` / `360DTFenceLite` 覆盖桌面时，程序会优先使用窗口消息模拟拖拽当前 360 桌面图标。该路径不移动真实鼠标、不重载 360 布局，成功后会等待 `DTFenceData.dtf` 中目标图标 order 同步变化，再写入“移动成功”日志。
+从 v1.0.6 开始，360 桌面助手兼容逻辑默认进入“严格静默”模式：只尝试窗口消息拖拽，不移动真实鼠标，也不会杀掉/重启 360 桌面助手。
 
-如果窗口消息拖拽未被 360 接受，程序会继续回退到 v1.0.4 的真实鼠标拖拽；真实拖拽仍只会在源位置和目标位置当前都命中 360 桌面窗口时执行。若真实拖拽也失败，会自动回退到 v1.0.3 的稳定兜底路径：修改 `DTFenceData.dtf` 后临时重启 360 桌面助手加载布局。
+如果 360 当前版本拒绝窗口消息拖拽，程序会记录 `360 silent move was not confirmed; reload skipped because Allow360Reload=false`，并停止 360 兼容兜底，避免出现桌面布局闪烁或重载。
+
+如需恢复旧版本兜底，可在 `config.ini` 中手动设置：`Allow360RealMouseDrag=true` 启用真实鼠标拖拽，`Allow360Reload=true` 启用修改 `DTFenceData.dtf` 后重启 360 加载布局。默认两个选项均为 `false`。

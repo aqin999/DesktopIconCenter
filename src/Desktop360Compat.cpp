@@ -532,14 +532,18 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
             currentOrder = *observedOrder;
             source = OrderToPoint(currentOrder, rows, workArea);
         }
-        logger_.Warn(L"360 silent window-message drag was sent but not confirmed; falling back to real mouse drag: " + filePath.filename().wstring());
+        logger_.Warn(L"360 silent window-message drag was sent but not confirmed: " + filePath.filename().wstring() +
+            L", sourceOrder=" + std::to_wstring(currentOrder) +
+            L", destinationOrder=" + std::to_wstring(destinationOrder) +
+            L", source=(" + std::to_wstring(source.x) + L"," + std::to_wstring(source.y) + L")" +
+            L", destination=(" + std::to_wstring(destination.x) + L"," + std::to_wstring(destination.y) + L")");
     }
     else
     {
-        logger_.Warn(L"360 silent window-message drag failed; falling back to real mouse drag: " + filePath.filename().wstring());
+        logger_.Warn(L"360 silent window-message drag failed: " + filePath.filename().wstring());
     }
 
-    if (SendDragMessages(desktopWindow, source, destination))
+    if (config.allow360RealMouseDrag && SendDragMessages(desktopWindow, source, destination))
     {
         DtfDesktop refreshed;
         for (int attempt = 0; attempt < 12; ++attempt)
@@ -563,11 +567,22 @@ Desktop360MoveResult Desktop360Compat::TryMoveIconToCenter(const std::filesystem
             }
         }
 
-        logger_.Warn(L"360 真实拖拽未确认成功，改用重载布局兜底: " + filePath.filename().wstring());
+        logger_.Warn(L"360 real mouse drag was sent but not confirmed: " + filePath.filename().wstring());
+    }
+    else if (!config.allow360RealMouseDrag)
+    {
+        logger_.Warn(L"360 real mouse drag skipped because Allow360RealMouseDrag=false: " + filePath.filename().wstring());
     }
     else
     {
-        logger_.Warn(L"360 真实拖拽输入失败，改用重载布局兜底: " + filePath.filename().wstring());
+        logger_.Warn(L"360 real mouse drag failed; falling back to layout reload only if Allow360Reload=true: " + filePath.filename().wstring());
+    }
+
+    if (!config.allow360Reload)
+    {
+        result.message = L"360 silent move was not confirmed; reload skipped because Allow360Reload=false";
+        logger_.Warn(result.message + L": " + filePath.filename().wstring());
+        return result;
     }
 
     const auto processInfo = QueryProcessInfoFromWindow(desktopWindow);
